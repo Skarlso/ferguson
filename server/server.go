@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/rand"
 	"crypto/tls"
-	"crypto/x509"
 	"log"
 	"net"
 	"os"
@@ -12,9 +11,11 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 )
 
+var client *redis.Client
+
 func init() {
 	redisAddr := os.Getenv("REDIS_ADDRESS")
-	client := redis.NewClient(&redis.Options{
+	client = redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
 		Password: "", // no password set
 		DB:       0,  // use default DB
@@ -22,7 +23,7 @@ func init() {
 
 	_, err := client.Ping().Result()
 	if err != nil {
-		log.Fatalf("failed to connect to redis server on: ", redisAddr)
+		log.Fatal("failed to connect to redis server on: ", redisAddr)
 	}
 }
 
@@ -51,40 +52,42 @@ func (s *Server) listen() {
 		}
 		defer conn.Close()
 		log.Printf("server: accepted from %s", conn.RemoteAddr())
-		tlscon, ok := conn.(*tls.Conn)
-		if ok {
-			log.Print("ok=true")
-			state := tlscon.ConnectionState()
-			for _, v := range state.PeerCertificates {
-				log.Print(x509.MarshalPKIXPublicKey(v.PublicKey))
-			}
-		}
-		go handleClient(conn)
+		// tlscon, ok := conn.(*tls.Conn)
+		// if ok {
+		// 	log.Print("ok=true")
+		// 	state := tlscon.ConnectionState()
+		// 	for _, v := range state.PeerCertificates {
+		// 		log.Print(x509.MarshalPKIXPublicKey(v.PublicKey))
+		// 	}
+		// }
+		go saveClient(conn)
 	}
 }
 
-func handleClient(conn net.Conn) {
-	defer conn.Close()
-	buf := make([]byte, 512)
-	for {
-		log.Print("server: conn: waiting")
-		n, err := conn.Read(buf)
-		if err != nil {
-			if err != nil {
-				log.Printf("server: conn: read: %s", err)
-			}
-			break
-		}
-		log.Printf("server: conn: echo %q\n", string(buf[:n]))
-		n, err = conn.Write(buf[:n])
-
-		n, err = conn.Write(buf[:n])
-		log.Printf("server: conn: wrote %d bytes", n)
-
-		if err != nil {
-			log.Printf("server: write: %s", err)
-			break
-		}
+func (s *Server) connectToAgentAddress(addrs string) *tls.Conn {
+	cert, err := tls.LoadX509KeyPair("certs/server.pem", "certs/server.key")
+	if err != nil {
+		log.Fatalf("server: loadkeys: %s", err)
 	}
-	log.Println("server: conn: closed")
+	config := tls.Config{
+		Certificates:       []tls.Certificate{cert},
+		InsecureSkipVerify: true,
+	}
+	conn, err := tls.Dial("tcp", addrs, &config)
+	if err != nil {
+		log.Print("no agent yet: ", err)
+		return nil
+	}
+	log.Println("agent: connected to: ", conn.RemoteAddr())
+
+	state := conn.ConnectionState()
+
+	log.Println("agent: handshake: ", state.HandshakeComplete)
+	log.Println("agent: mutual: ", state.NegotiatedProtocolIsMutual)
+	return conn
+}
+
+func saveClient(conn net.Conn) {
+	defer conn.Close()
+	client.Set("agent1", conn.RemoteAddr(), 0)
 }

@@ -2,8 +2,6 @@ package main
 
 import (
 	"crypto/tls"
-	"crypto/x509"
-	"fmt"
 	"io"
 	"log"
 	"os"
@@ -21,31 +19,38 @@ func (a *Agent) connect() {
 	if err != nil {
 		log.Fatalf("server: loadkeys: %s", err)
 	}
-	config := tls.Config{Certificates: []tls.Certificate{cert}, InsecureSkipVerify: true}
+	config := tls.Config{
+		Certificates:       []tls.Certificate{cert},
+		InsecureSkipVerify: true,
+	}
 	conn, err := tls.Dial("tcp", serverAddr, &config)
 	if err != nil {
 		log.Fatalf("agent: dial: %s", err)
 	}
-	defer conn.Close()
 	log.Println("agent: connected to: ", conn.RemoteAddr())
 
 	state := conn.ConnectionState()
-	for _, v := range state.PeerCertificates {
-		fmt.Println(x509.MarshalPKIXPublicKey(v.PublicKey))
-		fmt.Println(v.Subject)
-	}
+
 	log.Println("agent: handshake: ", state.HandshakeComplete)
 	log.Println("agent: mutual: ", state.NegotiatedProtocolIsMutual)
 
-	message := "Hello\n"
-	n, err := io.WriteString(conn, message)
+	message := "Agent connected. Ready to accept work.\n"
+	_, err = io.WriteString(conn, message)
 	if err != nil {
 		log.Fatalf("agent: write: %s", err)
 	}
-	log.Printf("agent: wrote %q (%d bytes)", message, n)
-
-	reply := make([]byte, 256)
-	n, err = conn.Read(reply)
-	log.Printf("agent: read %q (%d bytes)", string(reply[:n]), n)
-	log.Print("agent: exiting")
+	defer conn.Close()
+	buf := make([]byte, 512)
+	for {
+		log.Print("server: conn: waiting")
+		n, err := conn.Read(buf)
+		if err != nil {
+			if err != nil {
+				log.Printf("server: conn: read: %s", err)
+			}
+			break
+		}
+		log.Printf("server: conn: echo %q\n", string(buf[:n]))
+	}
+	log.Println("server: conn: closed")
 }
