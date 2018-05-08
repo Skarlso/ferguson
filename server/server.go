@@ -8,8 +8,23 @@ import (
 	"net"
 	"os"
 
+	"github.com/go-redis/redis"
 	_ "github.com/joho/godotenv/autoload"
 )
+
+func init() {
+	redisAddr := os.Getenv("REDIS_ADDRESS")
+	client := redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Password: "", // no password set
+		DB:       0,  // use default DB
+	})
+
+	_, err := client.Ping().Result()
+	if err != nil {
+		log.Fatalf("failed to connect to redis server on: ", redisAddr)
+	}
+}
 
 // Server defines a server object which has various capabilities that a server requires.
 type Server struct {
