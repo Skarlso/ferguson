@@ -40,8 +40,8 @@ func (a *Agent) connect() {
 		log.Fatalf("agent: write: %s", err)
 	}
 	defer conn.Close()
-	buf := make([]byte, 512)
 	for {
+		buf := make([]byte, 512)
 		log.Print("server: conn: waiting")
 		n, err := conn.Read(buf)
 		if err != nil {
@@ -50,7 +50,9 @@ func (a *Agent) connect() {
 			}
 			break
 		}
-		log.Printf("server: conn: echo %q\n", string(buf[:n]))
+		if n > 0 {
+			log.Printf("server: conn: echo %q\n", string(buf[:n]))
+		}
 	}
 	log.Println("server: conn: closed")
 }

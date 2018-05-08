@@ -4,8 +4,8 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"log"
-	"net"
 	"os"
+	"sync"
 
 	"github.com/go-redis/redis"
 	_ "github.com/joho/godotenv/autoload"
@@ -29,6 +29,7 @@ func init() {
 
 // Server defines a server object which has various capabilities that a server requires.
 type Server struct {
+	agents sync.Map
 }
 
 func (s *Server) listen() {
@@ -50,17 +51,8 @@ func (s *Server) listen() {
 			log.Printf("server: accept: %s", err)
 			break
 		}
-		defer conn.Close()
 		log.Printf("server: accepted from %s", conn.RemoteAddr())
-		// tlscon, ok := conn.(*tls.Conn)
-		// if ok {
-		// 	log.Print("ok=true")
-		// 	state := tlscon.ConnectionState()
-		// 	for _, v := range state.PeerCertificates {
-		// 		log.Print(x509.MarshalPKIXPublicKey(v.PublicKey))
-		// 	}
-		// }
-		go saveClient(conn)
+		s.saveClient(conn.(*tls.Conn))
 	}
 }
 
@@ -87,7 +79,46 @@ func (s *Server) connectToAgentAddress(addrs string) *tls.Conn {
 	return conn
 }
 
-func saveClient(conn net.Conn) {
-	defer conn.Close()
-	client.Set("agent1", conn.RemoteAddr(), 0)
+// Load in the connection detail of all agenst from redis and
+// populate the agents map for this server with nil connections.
+func (s *Server) populateAgentMap() {
+
+}
+
+// Create the actual connection to all agents in go routines and save
+// that connection in the agents map for further use.
+func (s *Server) createConnectionsToAgents() {
+
+}
+
+// Send a general ping to the agents recording response time in ms.
+// This is using sending of work right now, but it will use a ping.
+// if the ping comes back as errored, we get rid of the worker.
+func (s *Server) sendHealthCheckToAgents() {
+	f := func(key, value interface{}) bool {
+		if value == nil {
+			return false
+		}
+		if err := s.sendWork(value.(*tls.Conn)); err != nil {
+			s.agents.Delete(key)
+		}
+		return true
+	}
+	s.agents.Range(f)
+}
+
+// Save / Update an agent record in redis?
+func (s *Server) saveClient(conn *tls.Conn) {
+	s.agents.Store(conn.RemoteAddr(), conn)
+}
+
+func (s *Server) sendWork(conn *tls.Conn) error {
+	work := []byte("This is important work.")
+	_, err := conn.Write(work)
+	if err != nil {
+		log.Printf("%s went away, deleting from agents.", conn.RemoteAddr())
+		return err
+	}
+	// log.Printf("server: conn: wrote %d bytes", n)
+	return nil
 }
