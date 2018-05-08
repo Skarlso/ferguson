@@ -1,2 +1,3 @@
-# ferguson
-A CI service built in C.
+# Ferguson
+
+A CI service built in Go.
