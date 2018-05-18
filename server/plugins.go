@@ -6,10 +6,6 @@ import (
 
 var L *lua.LState
 
-func init() {
-	L = lua.NewState()
-}
-
 // // LoadFile loads a lua file
 // func LoadFile(module string, file string, data string) error {
 // 	pluginDef := "local P = {};" + module + " = P;setmetatable(" + module + ", {__index = _G});setfenv(1, P);"
@@ -26,6 +22,7 @@ func init() {
 // 	LoadFile("test")
 // }
 
+// Load runs a lua script.
 func Load(file, method string) lua.LValue {
 	L := lua.NewState()
 	defer L.Close()
@@ -36,7 +33,7 @@ func Load(file, method string) lua.LValue {
 		Fn:      L.GetGlobal(method),
 		NRet:    1,
 		Protect: true,
-	}, nil); err != nil {
+	}, lua.LNumber(3)); err != nil {
 		panic(err)
 	}
 	ret := L.Get(-1) // returned value
