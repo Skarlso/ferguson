@@ -5,7 +5,10 @@ import "log"
 func main() {
 
 	// Loading Server plugins before the server starts
-	val := Load("plugins/simple.lua", "func")
+	Load("plugins/simple.lua")
+
+	// Calling plugin
+	val, _ := Call("func")
 	log.Println("Got from the script: ", val)
 
 	server := new(Server)
