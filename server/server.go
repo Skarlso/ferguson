@@ -99,7 +99,8 @@ func (s *Server) sendHealthCheckToAgents() {
 		if value == nil {
 			return false
 		}
-		if err := s.sendWork(value.(*tls.Conn)); err != nil {
+		work := []byte("ping")
+		if err := s.sendWork(value.(*tls.Conn), work); err != nil {
 			s.agents.Delete(key)
 		}
 		return true
@@ -112,8 +113,7 @@ func (s *Server) saveClient(conn *tls.Conn) {
 	s.agents.Store(conn.RemoteAddr(), conn)
 }
 
-func (s *Server) sendWork(conn *tls.Conn) error {
-	work := []byte("This is important work.")
+func (s *Server) sendWork(conn *tls.Conn, work []byte) error {
 	_, err := conn.Write(work)
 	if err != nil {
 		log.Printf("%s went away, deleting from agents.", conn.RemoteAddr())
