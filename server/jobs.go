@@ -1,33 +1,38 @@
 package main
 
-import "fmt"
+import (
+	"log"
+
+	"github.com/yuin/gopher-lua"
+)
 
 // Job is a single job.
 type Job struct {
-	Name       string                            `yaml:"name"`
-	Stages     map[string]map[string]interface{} `yaml:"stages"`
-	Translated map[string][]string
+	Name       string        `yaml:"name"`
+	Stages     []interface{} `yaml:"steps"`
+	Translated []string
 }
 
 // Parse will translate the stages into executable bash scripts.
 func (j *Job) Parse() {
-	translated := make(map[string][]string, 0)
-	for k, v := range j.Stages {
-		commands := make([]string, 0)
-		for p, cmd := range v {
-			params := make([]interface{}, 0)
-			for _, p := range cmd.([]interface{}) {
-				for _, param := range p.(map[interface{}]interface{}) {
-					params = append(params, param)
+	translated := make([]string, 0)
+	// Parse the data as key = value pairs and pass it over to the plugin
+	// the plugin has to deal with applying the data internally.
+	for _, steps := range j.Stages {
+		for k, v := range steps.(map[interface{}]interface{}) {
+			params := L.NewTable()
+			for _, p := range v.([]interface{}) {
+				for key, value := range p.(map[interface{}]interface{}) {
+					params.RawSetString(key.(string), lua.LString(value.(string)))
 				}
 			}
-			t, err := Call(p, params...)
+			cmd, err := Call(k.(string), *params)
 			if err != nil {
-				fmt.Printf("problem during transalting step '%s'. error: %v\n", t, err)
+				log.Println("error while calling function: ", err)
+				return
 			}
-			commands = append(commands, t.String())
+			translated = append(translated, cmd.String())
 		}
-		translated[k] = commands
 	}
 	j.Translated = translated
 }

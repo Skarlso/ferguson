@@ -4,7 +4,6 @@ import (
 	"log"
 
 	"github.com/yuin/gopher-lua"
-	luar "layeh.com/gopher-luar"
 )
 
 // L is the Lua vm's state.
@@ -22,16 +21,12 @@ func Load(file string) {
 }
 
 // Call will call a Lua method in a loaded plugin.
-func Call(function string, args ...interface{}) (lua.LValue, error) {
-	var luaArgs []lua.LValue
-	for _, v := range args {
-		luaArgs = append(luaArgs, luar.New(L, v))
-	}
+func Call(function string, args lua.LTable) (lua.LValue, error) {
 	if err := L.CallByParam(lua.P{
 		Fn:      L.GetGlobal(function),
 		NRet:    1,
 		Protect: true,
-	}, luaArgs...); err != nil {
+	}, &args); err != nil {
 		panic(err)
 	}
 	ret := L.Get(-1) // returned value

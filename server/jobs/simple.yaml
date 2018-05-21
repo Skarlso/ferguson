@@ -1,11 +1,9 @@
 name: "Simple Job"
-stages:
-  build:
-    git:
-      - repo: "Skarlso/ferguson"
-      - branch: "master"
-    bash:
-      - cmd: "echo something"
-  test:
-    bash:
-      - cmd: "make test"
+steps:
+  - git:
+    - repo: "Skarlso/ferguson"
+    - branch: "master"
+  - bash:
+    - cmd: "echo something"
+  - bash:
+    - cmd: "make test"

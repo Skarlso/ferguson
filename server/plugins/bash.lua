@@ -1,4 +1,4 @@
 -- defines a factorial function
 function bash (cmd)
-    return cmd
+    return cmd['cmd']
 end

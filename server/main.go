@@ -30,8 +30,7 @@ func PostJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	j.Parse()
-	fmt.Fprintln(w, "got translated commands: ", j.Translated["build"])
-	fmt.Fprintln(w, "got translated commands: ", j.Translated["test"])
+	fmt.Println("got translated commands: ", j.Translated)
 }
 
 func main() {
