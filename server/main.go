@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -33,14 +34,20 @@ func PostJob(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("got translated commands: ", j.Translated)
 }
 
-func main() {
-	// Loading Server plugins before the server starts
-	Load("plugins/git.lua")
-	Load("plugins/bash.lua")
+func loadPlugins() {
+	files, err := ioutil.ReadDir("./plugins")
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	// Calling plugin
-	// val, _ := Call("func", 6)
-	// log.Println("Got from the script: ", val)
+	for _, file := range files {
+		Load(filepath.Join("plugins", file.Name()))
+		log.Println("loaded plugin: ", (file.Name()))
+	}
+}
+
+func main() {
+	loadPlugins()
 
 	server := new(Server)
 	server.populateAgentMap()
