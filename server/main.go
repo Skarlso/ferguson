@@ -31,7 +31,7 @@ func PostJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	j.Parse()
-	fmt.Println("got translated commands: ", j.Translated)
+	server.SendToNoneBusyWorker(j.Translated)
 }
 
 func loadPlugins() {
@@ -46,10 +46,11 @@ func loadPlugins() {
 	}
 }
 
+var server Server
+
 func main() {
 	loadPlugins()
 
-	server := new(Server)
 	server.populateAgentMap()
 	go server.listen()
 	health := func() {

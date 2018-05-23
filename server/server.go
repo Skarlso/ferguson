@@ -30,6 +30,13 @@ func init() {
 // Server defines a server object which has various capabilities that a server requires.
 type Server struct {
 	agents sync.Map
+	count  int
+}
+
+type Agent struct {
+	Connection *tls.Conn
+	Busy       bool
+	Hostname   string
 }
 
 func (s *Server) listen() {
@@ -52,7 +59,12 @@ func (s *Server) listen() {
 			break
 		}
 		log.Printf("server: accepted from %s", conn.RemoteAddr())
-		s.saveClient(conn.(*tls.Conn))
+		a := Agent{
+			Connection: conn.(*tls.Conn),
+			Hostname:   conn.RemoteAddr().String(),
+			Busy:       false,
+		}
+		s.saveClient(&a)
 	}
 }
 
@@ -91,17 +103,36 @@ func (s *Server) createConnectionsToAgents() {
 
 }
 
+// SendToNoneBusyWorker selects a worker which isn't doing anything atm.
+func (s *Server) SendToNoneBusyWorker(jobs []string) {
+	if s.count < 1 {
+		return
+	}
+	f := func(key, value interface{}) bool {
+		a := value.(*Agent)
+		if a.Busy {
+			return true
+		}
+		log.Println("sending work to host: ", a.Hostname)
+		for _, job := range jobs {
+			s.sendWork(a.Connection, []byte(job))
+		}
+		a.Busy = true
+		return false
+	}
+	s.agents.Range(f)
+}
+
 // Send a general ping to the agents recording response time in ms.
 // This is using sending of work right now, but it will use a ping.
 // if the ping comes back as errored, we get rid of the worker.
 func (s *Server) sendHealthCheckToAgents() {
 	f := func(key, value interface{}) bool {
-		if value == nil {
-			return false
-		}
 		work := []byte("ping")
-		if err := s.sendWork(value.(*tls.Conn), work); err != nil {
+		if err := s.sendWork(value.(*Agent).Connection, work); err != nil {
+			log.Println("deleting host: ", key.(string))
 			s.agents.Delete(key)
+			s.count--
 		}
 		return true
 	}
@@ -109,8 +140,9 @@ func (s *Server) sendHealthCheckToAgents() {
 }
 
 // Save / Update an agent record in redis?
-func (s *Server) saveClient(conn *tls.Conn) {
-	s.agents.Store(conn.RemoteAddr(), conn)
+func (s *Server) saveClient(a *Agent) {
+	s.agents.Store(a.Hostname, a)
+	s.count++
 }
 
 func (s *Server) sendWork(conn *tls.Conn, work []byte) error {
