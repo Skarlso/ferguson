@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/tls"
 	"io"
 	"log"
@@ -40,18 +41,26 @@ func (a *Agent) connect() {
 		log.Fatalf("agent: write: %s", err)
 	}
 	defer conn.Close()
+	work := make([][]byte, 0)
 	for {
-		buf := make([]byte, 512)
-		log.Print("server: conn: waiting")
+		buf := make([]byte, 1024)
+		// log.Print("server: conn: waiting")
 		n, err := conn.Read(buf)
 		if err != nil {
-			if err != nil {
-				log.Printf("server: conn: read: %s", err)
-			}
+			log.Printf("server: conn: read: %s", err)
 			break
 		}
 		if n > 0 {
-			log.Printf("server: conn: echo %q\n", string(buf[:n]))
+			read := buf[:n]
+			if bytes.Equal(read, []byte("==BEGIN")) {
+				log.Println("begun receiving work")
+				work = make([][]byte, 0)
+			} else if bytes.Equal(read, []byte("==END")) {
+				log.Println("received end of work signal")
+				go DoWork(work)
+			} else {
+				work = append(work, read)
+			}
 		}
 	}
 	log.Println("server: conn: closed")

@@ -33,6 +33,10 @@ type Server struct {
 	count  int
 }
 
+// Agent defines an agent.
+// @Connection is a tls.Conn connection which to an Agent.
+// @Busy handles wether an agent is current doing some work.
+// @Hostname is the name of the agent in the format of a hostname.
 type Agent struct {
 	Connection *tls.Conn
 	Busy       bool
@@ -114,9 +118,11 @@ func (s *Server) SendToNoneBusyWorker(jobs []string) {
 			return true
 		}
 		log.Println("sending work to host: ", a.Hostname)
+		s.sendWork(a.Connection, []byte("==BEGIN"))
 		for _, job := range jobs {
 			s.sendWork(a.Connection, []byte(job))
 		}
+		s.sendWork(a.Connection, []byte("==END"))
 		a.Busy = true
 		return false
 	}
@@ -151,6 +157,5 @@ func (s *Server) sendWork(conn *tls.Conn, work []byte) error {
 		log.Printf("%s went away, deleting from agents.", conn.RemoteAddr())
 		return err
 	}
-	// log.Printf("server: conn: wrote %d bytes", n)
 	return nil
 }
