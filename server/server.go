@@ -87,11 +87,6 @@ func (s *Server) connectToAgentAddress(addrs string) *tls.Conn {
 		return nil
 	}
 	log.Println("agent: connected to: ", conn.RemoteAddr())
-
-	state := conn.ConnectionState()
-
-	log.Println("agent: handshake: ", state.HandshakeComplete)
-	log.Println("agent: mutual: ", state.NegotiatedProtocolIsMutual)
 	return conn
 }
 
