@@ -13,6 +13,7 @@ type Job struct {
 	Translated []string
 }
 
+// RunningJob will take care of a running job and all it's affiliations.
 type RunningJob struct {
 	// Must be mutex.Lock()-ed so it's not repeated
 	Count int

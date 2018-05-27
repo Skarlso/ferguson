@@ -1,13 +1,14 @@
 package main
 
 import (
-	"crypto/rand"
+	"bytes"
 	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/go-redis/redis"
@@ -47,33 +48,9 @@ type Agent struct {
 	Hostname   string
 }
 
-func (s *Server) listen() {
-	listeningAddr := os.Getenv("LISTENING_ADDRESS")
-	cert, err := tls.LoadX509KeyPair("certs/server.pem", "certs/server.key")
-	if err != nil {
-		log.Fatalf("server: loadkeys: %s", err)
-	}
-	config := tls.Config{Certificates: []tls.Certificate{cert}}
-	config.Rand = rand.Reader
-	listener, err := tls.Listen("tcp", listeningAddr, &config)
-	if err != nil {
-		log.Fatalf("server: listen: %s", err)
-	}
-	log.Print("server: listening")
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			log.Printf("server: accept: %s", err)
-			break
-		}
-		log.Printf("server: accepted from %s", conn.RemoteAddr())
-		a := Agent{
-			Connection: conn.(*tls.Conn),
-			Hostname:   conn.RemoteAddr().String(),
-			Busy:       false,
-		}
-		s.saveClient(&a)
-	}
+type SSHAgent struct {
+	Busy     bool
+	Hostname string
 }
 
 var authorizedKeysMap = make(map[string]bool, 0)
@@ -82,7 +59,7 @@ func loadAuthorizedKeys() {
 	// Public key authentication is done by comparing
 	// the public key of a received connection
 	// with the entries in the authorized_keys file.
-	authorizedKeysBytes, err := ioutil.ReadFile("~/.ssh/authorized_keys")
+	authorizedKeysBytes, err := ioutil.ReadFile("/Users/hannibal/.ssh/authorized_keys")
 	if err != nil {
 		log.Fatalf("Failed to load authorized_keys, err: %v", err)
 	}
@@ -111,12 +88,11 @@ func authorizeConnection(c ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permiss
 }
 
 func (s *Server) sshListen() {
-
+	loadAuthorizedKeys()
 	config := ssh.ServerConfig{
 		PublicKeyCallback: authorizeConnection,
 	}
-
-	privateBytes, err := ioutil.ReadFile("id_rsa")
+	privateBytes, err := ioutil.ReadFile("/Users/hannibal/.ssh/id_rsa")
 	if err != nil {
 		log.Fatal("Failed to load private key: ", err)
 	}
@@ -132,7 +108,7 @@ func (s *Server) sshListen() {
 	if err != nil {
 		panic(err)
 	}
-
+	log.Println("listening for ssh connections...")
 	for {
 		conn, err := socket.Accept()
 		if err != nil {
@@ -146,26 +122,76 @@ func (s *Server) sshListen() {
 		}
 
 		log.Println("Connection from", sshConn.RemoteAddr())
+		ssha := SSHAgent{
+			Hostname: sshConn.RemoteAddr().String(),
+			Busy:     false,
+		}
+		s.saveSSHClient(&ssha)
 		sshConn.Close()
 	}
 }
 
-func (s *Server) connectToAgentAddress(addrs string) *tls.Conn {
-	cert, err := tls.LoadX509KeyPair("certs/server.pem", "certs/server.key")
+func (ssha *SSHAgent) dialAndSend(commands []string) {
+	key, err := ioutil.ReadFile("/Users/hannibal/.ssh/id_rsa")
 	if err != nil {
-		log.Fatalf("server: loadkeys: %s", err)
+		log.Fatalf("unable to read private key: %v", err)
 	}
-	config := tls.Config{
-		Certificates:       []tls.Certificate{cert},
-		InsecureSkipVerify: true,
-	}
-	conn, err := tls.Dial("tcp", addrs, &config)
+
+	// Create the Signer for this private key.
+	signer, err := ssh.ParsePrivateKey(key)
 	if err != nil {
-		log.Print("no agent yet: ", err)
-		return nil
+		log.Fatalf("unable to parse private key: %v", err)
 	}
-	log.Println("agent: connected to: ", conn.RemoteAddr())
-	return conn
+
+	config := &ssh.ClientConfig{
+		User: "hannibal",
+		Auth: []ssh.AuthMethod{
+			// Use the PublicKeys method for remote authentication.
+			ssh.PublicKeys(signer),
+		},
+		// Normally this would be ssh.FixedHostKey(hostKey),
+		// In which case I would have to handle adding an unkown hostkey
+		// to the list of `known_hosts`.
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+	hostName := ssha.Hostname[:strings.IndexByte(ssha.Hostname, ':')]
+	// Connect to the remote server and perform the SSH handshake.
+	client, err := ssh.Dial("tcp", hostName+":8002", config)
+	if err != nil {
+		log.Fatalf("unable to connect: %v", err)
+	}
+	defer client.Close()
+
+	// Each ClientConn can support multiple interactive sessions,
+	// represented by a Session.
+	session, err := client.NewSession()
+	if err != nil {
+		log.Fatal("Failed to create session: ", err)
+	}
+	defer session.Close()
+
+	// Once a Session is created, you can execute a single command on
+	// the remote side using the Run method.
+	var b bytes.Buffer
+	session.Stdout = &b
+	if err := session.Run("/usr/bin/whoami"); err != nil {
+		log.Fatal("Failed to run: " + err.Error())
+	}
+	fmt.Println(b.String())
+}
+
+func (s *Server) executeViaSSH(commands []string) {
+	if s.count < 1 {
+		return
+	}
+	f := func(key, value interface{}) bool {
+		ssha := value.(*SSHAgent)
+		log.Println("sending work to host: ", ssha.Hostname)
+		// dial hostname here
+		ssha.dialAndSend(commands)
+		return false
+	}
+	s.agents.Range(f)
 }
 
 // Load in the connection detail of all agenst from redis and
@@ -219,7 +245,7 @@ func (s *Server) sendHealthCheckToAgents() {
 }
 
 // Save / Update an agent record in redis?
-func (s *Server) saveClient(a *Agent) {
+func (s *Server) saveSSHClient(a *SSHAgent) {
 	s.agents.Store(a.Hostname, a)
 	s.count++
 }
