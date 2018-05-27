@@ -6,9 +6,13 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 
 	"golang.org/x/crypto/ssh"
-	"golang.org/x/crypto/ssh/terminal"
+)
+
+var (
+	DEFAULT_SHELL string = "bash"
 )
 
 var authorizedKeysMap = make(map[string]bool, 0)
@@ -83,42 +87,67 @@ func (a *Agent) sshListen() {
 		log.Println("connection accepted from master at: ", sshConn.RemoteAddr())
 		log.Println("performing work.")
 		go ssh.DiscardRequests(reqs)
-		// Service the incoming Channel channel.
-		for newChannel := range chans {
-			// Channels have a type, depending on the application level
-			// protocol intended. In the case of a shell, the type is
-			// "session" and ServerShell may be used to present a simple
-			// terminal interface.
-			if newChannel.ChannelType() != "session" {
-				newChannel.Reject(ssh.UnknownChannelType, "unknown channel type")
-				continue
-			}
-			channel, requests, err := newChannel.Accept()
-			if err != nil {
-				log.Fatalf("Could not accept channel: %v", err)
-			}
+		go handleChannels(chans)
+	}
+}
 
-			// Sessions have out-of-band requests such as "shell",
-			// "pty-req" and "env".  Here we handle only the
-			// "shell" request.
-			go func(in <-chan *ssh.Request) {
-				for req := range in {
-					req.Reply(req.Type == "shell", nil)
-				}
-			}(requests)
-
-			term := terminal.NewTerminal(channel, "> ")
-
-			go func() {
-				defer channel.Close()
-				for {
-					line, err := term.ReadLine()
-					if err != nil {
-						break
-					}
-					fmt.Println(line)
-				}
-			}()
+func handleChannels(chans <-chan ssh.NewChannel) {
+	// Service the incoming Channel channel.
+	for newChannel := range chans {
+		// Channels have a type, depending on the application level
+		// protocol intended. In the case of a shell, the type is
+		// "session" and ServerShell may be used to present a simple
+		// terminal interface.
+		if t := newChannel.ChannelType(); t != "session" {
+			newChannel.Reject(ssh.UnknownChannelType, fmt.Sprintf("unknown channel type: %s", t))
+			continue
 		}
+		channel, requests, err := newChannel.Accept()
+		if err != nil {
+			log.Printf("could not accept channel (%s)", err)
+			continue
+		}
+
+		// allocate a terminal for this channel
+		log.Print("creating pty...")
+
+		var shell string
+		shell = os.Getenv("SHELL")
+		if shell == "" {
+			shell = DEFAULT_SHELL
+		}
+
+		// Sessions have out-of-band requests such as "shell", "pty-req" and "env"
+		go func(in <-chan *ssh.Request) {
+			for req := range in {
+				log.Printf("%v %s", req.Payload, req.Payload)
+				switch req.Type {
+				case "exec":
+					command := string(req.Payload[4 : req.Payload[3]+4])
+					cmd := exec.Command(shell, []string{"-c", command}...)
+
+					cmd.Stdout = channel
+					cmd.Stderr = channel
+					cmd.Stdin = channel
+
+					err := cmd.Start()
+					if err != nil {
+						log.Printf("could not start command (%s)", err)
+						continue
+					}
+
+					// teardown session
+					go func() {
+						_, err := cmd.Process.Wait()
+						if err != nil {
+							log.Printf("failed to exit bash (%s)", err)
+						}
+						channel.Close()
+						log.Printf("session closed")
+					}()
+				}
+				req.Reply(true, nil)
+			}
+		}(requests)
 	}
 }
