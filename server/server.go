@@ -3,12 +3,16 @@ package main
 import (
 	"crypto/rand"
 	"crypto/tls"
+	"fmt"
+	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"sync"
 
 	"github.com/go-redis/redis"
 	_ "github.com/joho/godotenv/autoload"
+	"golang.org/x/crypto/ssh"
 )
 
 var client *redis.Client
@@ -69,6 +73,80 @@ func (s *Server) listen() {
 			Busy:       false,
 		}
 		s.saveClient(&a)
+	}
+}
+
+var authorizedKeysMap = make(map[string]bool, 0)
+
+func loadAuthorizedKeys() {
+	// Public key authentication is done by comparing
+	// the public key of a received connection
+	// with the entries in the authorized_keys file.
+	authorizedKeysBytes, err := ioutil.ReadFile("~/.ssh/authorized_keys")
+	if err != nil {
+		log.Fatalf("Failed to load authorized_keys, err: %v", err)
+	}
+
+	for len(authorizedKeysBytes) > 0 {
+		pubKey, _, _, rest, err := ssh.ParseAuthorizedKey(authorizedKeysBytes)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		authorizedKeysMap[string(pubKey.Marshal())] = true
+		authorizedKeysBytes = rest
+	}
+}
+
+func authorizeConnection(c ssh.ConnMetadata, pubKey ssh.PublicKey) (*ssh.Permissions, error) {
+	if authorizedKeysMap[string(pubKey.Marshal())] {
+		return &ssh.Permissions{
+			// Record the public key used for authentication.
+			Extensions: map[string]string{
+				"pubkey-fp": ssh.FingerprintSHA256(pubKey),
+			},
+		}, nil
+	}
+	return nil, fmt.Errorf("unknown public key for %q", c.User())
+}
+
+func (s *Server) sshListen() {
+
+	config := ssh.ServerConfig{
+		PublicKeyCallback: authorizeConnection,
+	}
+
+	privateBytes, err := ioutil.ReadFile("id_rsa")
+	if err != nil {
+		log.Fatal("Failed to load private key: ", err)
+	}
+
+	private, err := ssh.ParsePrivateKey(privateBytes)
+	if err != nil {
+		log.Fatal("Failed to parse private key: ", err)
+	}
+
+	config.AddHostKey(private)
+	listeningAddr := os.Getenv("LISTENING_ADDRESS")
+	socket, err := net.Listen("tcp", listeningAddr)
+	if err != nil {
+		panic(err)
+	}
+
+	for {
+		conn, err := socket.Accept()
+		if err != nil {
+			panic(err)
+		}
+
+		// From a standard TCP connection to an encrypted SSH connection
+		sshConn, _, _, err := ssh.NewServerConn(conn, &config)
+		if err != nil {
+			panic(err)
+		}
+
+		log.Println("Connection from", sshConn.RemoteAddr())
+		sshConn.Close()
 	}
 }
 
