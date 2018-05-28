@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"crypto/tls"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -38,16 +37,8 @@ type Server struct {
 	count  int
 }
 
-// Agent defines an agent.
-// @Connection is a tls.Conn connection which to an Agent.
-// @Busy handles wether an agent is current doing some work.
-// @Hostname is the name of the agent in the format of a hostname.
-type Agent struct {
-	Connection *tls.Conn
-	Busy       bool
-	Hostname   string
-}
-
+// SSHAgent defines an agent which can be ssh'ed to.
+// Handles connections based on hostname.
 type SSHAgent struct {
 	Busy     bool
 	Hostname string
@@ -131,7 +122,7 @@ func (s *Server) sshListen() {
 	}
 }
 
-func (ssha *SSHAgent) dialAndSend(commands []string) {
+func (ssha *SSHAgent) dialAndSend(commands []string) error {
 	sshPort := os.Getenv("SSH_PORT")
 	sshUser := os.Getenv("SSH_USER")
 	key, err := ioutil.ReadFile("/Users/hannibal/.ssh/id_rsa")
@@ -176,11 +167,14 @@ func (ssha *SSHAgent) dialAndSend(commands []string) {
 	// the remote side using the Run method.
 	var b bytes.Buffer
 	session.Stdout = &b
-	if err := session.Run("/usr/bin/whoami"); err != nil {
-		log.Fatal("Failed to run: " + err.Error())
+	for _, cmd := range commands {
+		log.Println("running: ", cmd)
+		if err := session.Run(cmd); err != nil {
+			return err
+		}
+		log.Println(b.String())
 	}
-	fmt.Println("return was successful.")
-	fmt.Println(b.String())
+	return nil
 }
 
 func (s *Server) executeViaSSH(commands []string) {
@@ -190,7 +184,6 @@ func (s *Server) executeViaSSH(commands []string) {
 	f := func(key, value interface{}) bool {
 		ssha := value.(*SSHAgent)
 		log.Println("sending work to host: ", ssha.Hostname)
-		// dial hostname here
 		ssha.dialAndSend(commands)
 		return false
 	}
@@ -209,35 +202,13 @@ func (s *Server) createConnectionsToAgents() {
 
 }
 
-// SendToNoneBusyWorker selects a worker which isn't doing anything atm.
-func (s *Server) SendToNoneBusyWorker(jobs []string) {
-	if s.count < 1 {
-		return
-	}
-	f := func(key, value interface{}) bool {
-		a := value.(*Agent)
-		if a.Busy {
-			return true
-		}
-		log.Println("sending work to host: ", a.Hostname)
-		s.sendWork(a.Connection, []byte("==BEGIN"))
-		for _, job := range jobs {
-			s.sendWork(a.Connection, []byte(job))
-		}
-		s.sendWork(a.Connection, []byte("==END"))
-		a.Busy = true
-		return false
-	}
-	s.agents.Range(f)
-}
-
 // Send a general ping to the agents recording response time in ms.
 // This is using sending of work right now, but it will use a ping.
 // if the ping comes back as errored, we get rid of the worker.
-func (s *Server) sendHealthCheckToAgents() {
+func (s *Server) sendHealthCheckToSSHAgents() {
 	f := func(key, value interface{}) bool {
-		work := []byte("ping")
-		if err := s.sendWork(value.(*Agent).Connection, work); err != nil {
+		ssha := value.(*SSHAgent)
+		if err := ssha.dialAndSend([]string{"echo"}); err != nil {
 			log.Println("deleting host: ", key.(string))
 			s.agents.Delete(key)
 			s.count--
@@ -251,13 +222,4 @@ func (s *Server) sendHealthCheckToAgents() {
 func (s *Server) saveSSHClient(a *SSHAgent) {
 	s.agents.Store(a.Hostname, a)
 	s.count++
-}
-
-func (s *Server) sendWork(conn *tls.Conn, work []byte) error {
-	_, err := conn.Write(work)
-	if err != nil {
-		log.Printf("%s went away, deleting from agents.", conn.RemoteAddr())
-		return err
-	}
-	return nil
 }

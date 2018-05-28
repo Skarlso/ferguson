@@ -18,7 +18,7 @@ type RunningJob struct {
 	// Must be mutex.Lock()-ed so it's not repeated
 	Count int
 	// The Agent that is running this job
-	Agent Agent
+	Agent SSHAgent
 }
 
 // Parse will translate the stages into executable bash scripts.

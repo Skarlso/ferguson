@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"time"
 
 	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v2"
@@ -54,14 +55,13 @@ func main() {
 	server.populateAgentMap()
 	go server.sshListen()
 
-	// go server.sshListen()
-	// health := func() {
-	// 	for {
-	// 		server.sendHealthCheckToAgents()
-	// 		time.Sleep(30 * time.Second)
-	// 	}
-	// }
-	// go health()
+	health := func() {
+		for {
+			server.sendHealthCheckToSSHAgents()
+			time.Sleep(30 * time.Second)
+		}
+	}
+	go health()
 
 	router := mux.NewRouter()
 	router.HandleFunc("/jobs/add", PostJob).Methods("POST")
