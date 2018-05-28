@@ -132,6 +132,8 @@ func (s *Server) sshListen() {
 }
 
 func (ssha *SSHAgent) dialAndSend(commands []string) {
+	sshPort := os.Getenv("SSH_PORT")
+	sshUser := os.Getenv("SSH_USER")
 	key, err := ioutil.ReadFile("/Users/hannibal/.ssh/id_rsa")
 	if err != nil {
 		log.Fatalf("unable to read private key: %v", err)
@@ -144,7 +146,7 @@ func (ssha *SSHAgent) dialAndSend(commands []string) {
 	}
 
 	config := &ssh.ClientConfig{
-		User: "hannibal",
+		User: sshUser,
 		Auth: []ssh.AuthMethod{
 			// Use the PublicKeys method for remote authentication.
 			ssh.PublicKeys(signer),
@@ -156,7 +158,7 @@ func (ssha *SSHAgent) dialAndSend(commands []string) {
 	}
 	hostName := ssha.Hostname[:strings.IndexByte(ssha.Hostname, ':')]
 	// Connect to the remote server and perform the SSH handshake.
-	client, err := ssh.Dial("tcp", hostName+":8002", config)
+	client, err := ssh.Dial("tcp", hostName+":"+sshPort, config)
 	if err != nil {
 		log.Fatalf("unable to connect: %v", err)
 	}
@@ -177,6 +179,7 @@ func (ssha *SSHAgent) dialAndSend(commands []string) {
 	if err := session.Run("/usr/bin/whoami"); err != nil {
 		log.Fatal("Failed to run: " + err.Error())
 	}
+	fmt.Println("return was successful.")
 	fmt.Println(b.String())
 }
 

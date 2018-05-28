@@ -7,5 +7,4 @@ type Agent struct {
 func main() {
 	agent := new(Agent)
 	agent.connectViaSSH()
-	agent.sshListen()
 }
