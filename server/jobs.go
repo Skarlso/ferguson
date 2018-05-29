@@ -18,7 +18,7 @@ type RunningJob struct {
 	// Must be mutex.Lock()-ed so it's not repeated
 	Count int
 	// The Agent that is running this job
-	Agent SSHAgent
+	Agent *SSHAgent
 }
 
 // Parse will translate the stages into executable bash scripts.
@@ -43,4 +43,9 @@ func (j *Job) Parse() {
 		}
 	}
 	j.Translated = translated
+}
+
+func (jr *RunningJob) executeViaSSH(cmds []string) {
+	jr.Agent.dialAndSend(cmds)
+	jr.Agent.Busy = false
 }

@@ -35,12 +35,13 @@ func PostJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	j.Parse()
-	// server.SendToNoneBusyWorker(j.Translated)
-	// CREATE a Job! The job will have an agent assigned
-	// As long as the agent is assigned to a Job it's busy.
-	// And the job will take care of the commands that it needs to execute on that agent.
-
-	server.executeViaSSH(j.Translated)
+	ssha := server.getIdleWorker()
+	ssha.Busy = true
+	rj := RunningJob{
+		Agent: ssha,
+		Count: jobCount,
+	}
+	rj.executeViaSSH(j.Translated)
 }
 
 // GetJob will attach to the log output of the job with number ID.
@@ -48,7 +49,7 @@ func GetJob(w http.ResponseWriter, r *http.Request) {
 	v := r.URL.Query()
 	id, err := strconv.Atoi(v.Get("id"))
 	if err != nil {
-		fmt.Fprintf(w, "cannot convert to number: '%s'", id)
+		fmt.Fprintf(w, "cannot convert to number: '%v'", id)
 	}
 	fmt.Fprintf(w, "looking up job number: '%d'", id)
 }

@@ -223,3 +223,17 @@ func (s *Server) saveSSHClient(a *SSHAgent) {
 	s.agents.Store(a.Hostname, a)
 	s.count++
 }
+
+func (s *Server) getIdleWorker() *SSHAgent {
+	var ssha *SSHAgent
+	f := func(key, value interface{}) bool {
+		a := value.(*SSHAgent)
+		if !a.Busy {
+			ssha = a
+			return false
+		}
+		return true
+	}
+	s.agents.Range(f)
+	return ssha
+}
