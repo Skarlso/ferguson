@@ -42,6 +42,14 @@ func PostJob(w http.ResponseWriter, r *http.Request) {
 		Count: jobCount,
 	}
 	rj.executeViaSSH(j.Translated)
+	jobCount++
+	saveJobCount(jobCount)
+}
+
+func saveJobCount(jc int) {
+	// mutexLock
+	// defer mutex.Unlock
+	// save file here
 }
 
 // GetJob will attach to the log output of the job with number ID.
