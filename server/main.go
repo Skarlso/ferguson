@@ -56,18 +56,26 @@ func PostJob(w http.ResponseWriter, r *http.Request) {
 
 // GetJob will attach to the log output of the job with number ID.
 func GetJob(w http.ResponseWriter, r *http.Request) {
-	v := r.URL.Query()
-	id, err := strconv.Atoi(v.Get("id"))
+	v := mux.Vars(r)
+	id, err := strconv.Atoi(v["id"])
 	if err != nil {
-		fmt.Fprintf(w, "cannot convert to number: '%v'", id)
+		fmt.Fprintf(w, "cannot convert to number: '%v'. err: %v", id, err)
+		return
 	}
-	fmt.Fprintf(w, "looking up job number: '%d'", id)
+	l, err := ioutil.ReadFile(filepath.Join("logs", v["id"]+".log"))
+	if err != nil {
+		fmt.Fprintln(w, "couldn't read log file: ", err)
+		return
+	}
+	fmt.Fprintln(w, string(l))
 }
 
+// QueueJob is the upper wrapper of a job json
 type QueueJob struct {
 	Job []string `json:"job"`
 }
 
+// QueueList is a list of jobs that are waiting in the queue to be processed
 type QueueList struct {
 	Jobs []QueueJob `json:"jobs"`
 }
@@ -120,7 +128,7 @@ func main() {
 
 	router := mux.NewRouter()
 	router.HandleFunc("/jobs/add", PostJob).Methods("POST")
-	router.HandleFunc("/jobs/{id:[0-9]+}", GetJob).Methods("GET")
+	router.HandleFunc("/job/{id:[0-9]+}", GetJob).Methods("GET")
 	router.HandleFunc("/jobs/listQueue", ListQueue).Methods("GET")
 	log.Fatal(http.ListenAndServe(":8000", router))
 }
