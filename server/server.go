@@ -173,6 +173,8 @@ func (ssha *SSHAgent) dialAndSend(commands []string) error {
 			log.Println("error while running cmd: ", err)
 			return err
 		}
+		// Save this into a log with extension as /.jobCount
+		// This is how I will tail a log when we Get a jobCount
 		log.Println(b.String())
 	}
 	return nil
