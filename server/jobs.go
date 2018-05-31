@@ -1,7 +1,10 @@
 package main
 
 import (
+	"io/ioutil"
 	"log"
+	"strconv"
+	"sync"
 
 	"github.com/yuin/gopher-lua"
 )
@@ -48,4 +51,43 @@ func (j *Job) Parse() {
 func (jr *RunningJob) executeViaSSH(cmds []string) {
 	jr.Agent.dialAndSend(cmds)
 	jr.Agent.Busy = false
+	// signal the queue clearer that an agent got free
+	// go queueClearer()
+}
+
+func queueClearer() {
+	if len(jobQueue) == 0 {
+		return
+	}
+	ssha := server.getIdleWorker()
+	if ssha == nil {
+		return
+	}
+	ssha.Busy = true
+	job := jobQueue[0]
+	jobQueue = append(jobQueue[:1], jobQueue[2:]...)
+	rj := RunningJob{
+		Agent: ssha,
+		Count: jobCount,
+	}
+	jobCount++
+	go rj.executeViaSSH(job)
+	saveJobCount(jobCount)
+}
+
+func saveJobCount(jc int) {
+	m := sync.Mutex{}
+	m.Lock()
+	defer m.Unlock()
+	c := strconv.Itoa(jobCount)
+	err := ioutil.WriteFile(".job_count", []byte(c), 0644)
+	if err != nil {
+		log.Println("error while saving version: ", err)
+	}
+}
+
+func loadJobCount() int {
+	b, _ := ioutil.ReadFile(".job_count")
+	c, _ := strconv.Atoi(string(b))
+	return c
 }

@@ -167,9 +167,10 @@ func (ssha *SSHAgent) dialAndSend(commands []string) error {
 	// the remote side using the Run method.
 	var b bytes.Buffer
 	session.Stdout = &b
+	log.Println("sending shit")
 	for _, cmd := range commands {
-		log.Println("running: ", cmd)
 		if err := session.Run(cmd); err != nil {
+			log.Println("error while running cmd: ", err)
 			return err
 		}
 		log.Println(b.String())

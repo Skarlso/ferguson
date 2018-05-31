@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -15,6 +16,8 @@ import (
 
 // TODO: Need a way to persist this count
 var jobCount int
+
+var jobQueue [][]string
 
 // PostJob accepts a yaml file to parse which contains steps to do.
 func PostJob(w http.ResponseWriter, r *http.Request) {
@@ -36,20 +39,19 @@ func PostJob(w http.ResponseWriter, r *http.Request) {
 	}
 	j.Parse()
 	ssha := server.getIdleWorker()
+	if ssha == nil {
+		jobQueue = append(jobQueue, j.Translated)
+		fmt.Fprintln(w, "job added to queue")
+		return
+	}
 	ssha.Busy = true
 	rj := RunningJob{
 		Agent: ssha,
 		Count: jobCount,
 	}
-	rj.executeViaSSH(j.Translated)
+	go rj.executeViaSSH(j.Translated)
 	jobCount++
 	saveJobCount(jobCount)
-}
-
-func saveJobCount(jc int) {
-	// mutexLock
-	// defer mutex.Unlock
-	// save file here
 }
 
 // GetJob will attach to the log output of the job with number ID.
@@ -60,6 +62,27 @@ func GetJob(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "cannot convert to number: '%v'", id)
 	}
 	fmt.Fprintf(w, "looking up job number: '%d'", id)
+}
+
+type QueueJob struct {
+	Job []string `json:"job"`
+}
+
+type QueueList struct {
+	Jobs []QueueJob `json:"jobs"`
+}
+
+// ListQueue returns any items that are waiting in line to be processed.
+func ListQueue(w http.ResponseWriter, r *http.Request) {
+	qj := new(QueueList)
+	for _, q := range jobQueue {
+		j := QueueJob{
+			Job: q,
+		}
+		qj.Jobs = append(qj.Jobs, j)
+	}
+	b, _ := json.Marshal(qj)
+	fmt.Fprintf(w, "%s", string(b))
 }
 
 func loadPlugins() {
@@ -75,6 +98,11 @@ func loadPlugins() {
 }
 
 var server Server
+
+func init() {
+	jobCount = loadJobCount()
+	jobQueue = make([][]string, 0)
+}
 
 func main() {
 	loadPlugins()
@@ -93,5 +121,6 @@ func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/jobs/add", PostJob).Methods("POST")
 	router.HandleFunc("/jobs/{id:[0-9]+}", GetJob).Methods("GET")
+	router.HandleFunc("/jobs/listQueue", ListQueue).Methods("GET")
 	log.Fatal(http.ListenAndServe(":8000", router))
 }
