@@ -7,8 +7,11 @@ import (
 	"log"
 	"net"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"text/template"
 
 	"github.com/go-redis/redis"
 	_ "github.com/joho/godotenv/autoload"
@@ -167,30 +170,43 @@ func (ssha *SSHAgent) dialAndSend(commands []string) error {
 	// the remote side using the Run method.
 	var b bytes.Buffer
 	session.Stdout = &b
-	log.Println("sending shit")
-	for _, cmd := range commands {
-		if err := session.Run(cmd); err != nil {
-			log.Println("error while running cmd: ", err)
-			return err
-		}
-		// Save this into a log with extension as /.jobCount
-		// This is how I will tail a log when we Get a jobCount
-		log.Println(b.String())
+	cmd, err := generateCommands(commands)
+	if err != nil {
+		log.Println("failed translating commands: ", err)
+		return err
+	}
+	if err := session.Run(cmd.String()); err != nil {
+		log.Println("error while running cmd: ", err)
+		return err
+	}
+	// log.Println(b.String())
+	jc := strconv.Itoa(jobCount)
+	err = ioutil.WriteFile(filepath.Join("logs", jc+".log"), b.Bytes(), 0644)
+	if err != nil {
+		log.Println("failed to write log file: ", err)
+		return err
 	}
 	return nil
 }
 
-func (s *Server) executeViaSSH(commands []string) {
-	if s.count < 1 {
-		return
+// Commands includes a list of commands for the template to parse
+type Commands struct {
+	Cmds []string
+}
+
+func generateCommands(cmds []string) (bytes.Buffer, error) {
+	var b bytes.Buffer
+	tmpl, err := ioutil.ReadFile("wrapper.template")
+	if err != nil {
+		return b, err
 	}
-	f := func(key, value interface{}) bool {
-		ssha := value.(*SSHAgent)
-		log.Println("sending work to host: ", ssha.Hostname)
-		ssha.dialAndSend(commands)
-		return false
+	c := Commands{Cmds: cmds}
+	t, err := template.New("wrapper").Parse(string(tmpl))
+	if err != nil {
+		return b, err
 	}
-	s.agents.Range(f)
+	err = t.Execute(&b, c)
+	return b, err
 }
 
 // Load in the connection detail of all agenst from redis and
@@ -211,6 +227,7 @@ func (s *Server) createConnectionsToAgents() {
 func (s *Server) sendHealthCheckToSSHAgents() {
 	f := func(key, value interface{}) bool {
 		ssha := value.(*SSHAgent)
+		log.Println("sending healthcheck")
 		if err := ssha.dialAndSend([]string{"echo"}); err != nil {
 			log.Println("deleting host: ", key.(string))
 			s.agents.Delete(key)

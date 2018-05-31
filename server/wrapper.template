@@ -1,0 +1,7 @@
+#!/bin/usr/env bash
+
+set -e
+
+{{range .Cmds}}
+{{.}}
+{{end}}

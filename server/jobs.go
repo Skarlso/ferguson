@@ -52,9 +52,10 @@ func (jr *RunningJob) executeViaSSH(cmds []string) {
 	jr.Agent.dialAndSend(cmds)
 	jr.Agent.Busy = false
 	// signal the queue clearer that an agent got free
-	// go queueClearer()
+	go queueClearer()
 }
 
+// This also needs to be running periodically in case there are no agents.
 func queueClearer() {
 	if len(jobQueue) == 0 {
 		return
@@ -63,9 +64,9 @@ func queueClearer() {
 	if ssha == nil {
 		return
 	}
+	var job []string
 	ssha.Busy = true
-	job := jobQueue[0]
-	jobQueue = append(jobQueue[:1], jobQueue[2:]...)
+	job, jobQueue = jobQueue[0], jobQueue[1:]
 	rj := RunningJob{
 		Agent: ssha,
 		Count: jobCount,
