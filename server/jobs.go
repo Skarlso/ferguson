@@ -22,6 +22,8 @@ type RunningJob struct {
 	Count int
 	// The Agent that is running this job
 	Agent *SSHAgent
+	// The outcome of the running job
+	Status bool
 }
 
 // Parse will translate the stages into executable bash scripts.
@@ -49,7 +51,11 @@ func (j *Job) Parse() {
 }
 
 func (jr *RunningJob) executeViaSSH(cmds []string) {
-	jr.Agent.dialAndSend(cmds)
+	err := jr.Agent.dialAndSend(cmds)
+	if err != nil {
+		jr.Status = false
+	}
+	jr.Status = true
 	jr.Agent.Busy = false
 	// signal the queue clearer that an agent got free
 	go queueClearer()
